@@ -87,46 +87,53 @@ next_tuple(void) {
 	struct srv_prio *pe;
 	struct srv *se;
 	uint16_t rnd;
-	unsigned csum = 0;
-	unsigned wsum = 0;
+	unsigned csum;
+	unsigned wsum;
 
 	pe = ISC_LIST_HEAD(prio_list);
-	if (pe == NULL)
-		return (NULL);
+	while (pe != NULL) {
+		struct srv_prio *next_pe;
 
-	for (se = ISC_LIST_HEAD(pe->srv_list);
-	     se != NULL;
-	     se = ISC_LIST_NEXT(se, link))
-	{
-		wsum += se->weight;
-	}
+		csum = 0;
+		wsum = 0;
 
-	rnd = random() % (wsum + 1);
-
-	for (se = ISC_LIST_HEAD(pe->srv_list);
-	     se != NULL;
-	     se = ISC_LIST_NEXT(se, link))
-	{
-		csum += se->weight;
-
-		if (csum >= rnd) {
-			ISC_LIST_UNLINK(pe->srv_list, se, link);
-			break;
+		for (se = ISC_LIST_HEAD(pe->srv_list);
+		     se != NULL;
+		     se = ISC_LIST_NEXT(se, link))
+		{
+			wsum += se->weight;
 		}
-	}
 
-	if (se == NULL) {
+		rnd = random() % (wsum + 1);
+
+		for (se = ISC_LIST_HEAD(pe->srv_list);
+		     se != NULL;
+		     se = ISC_LIST_NEXT(se, link))
+		{
+			csum += se->weight;
+
+			if (csum >= rnd) {
+				ISC_LIST_UNLINK(pe->srv_list, se, link);
+				break;
+			}
+		}
+
+		if (se != NULL) {
+#ifdef DEBUG
+			fprintf(stderr,
+				"rnd=%hu -> prio=%hu weight=%hu port=%hu tname=%s\n",
+				rnd, pe->prio, se->weight, se->port, se->tname);
+#endif
+			return (se);
+		}
+
+		next_pe = ISC_LIST_NEXT(pe, link);
 		ISC_LIST_UNLINK(prio_list, pe, link);
 		free(pe);
-		return (next_tuple());
+		pe = next_pe;
 	}
 
-#ifdef DEBUG
-	fprintf(stderr, "rnd=%hu -> prio=%hu weight=%hu port=%hu tname=%s\n",
-		rnd, pe->prio, se->weight, se->port, se->tname);
-#endif
-
-	return (se);
+	return (NULL);
 }
 
 static void
