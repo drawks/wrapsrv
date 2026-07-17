@@ -39,6 +39,10 @@
 #define NS_MAXMSG 65535
 #endif
 
+#ifndef WRAPSRV_VERSION
+#define WRAPSRV_VERSION "unknown"
+#endif
+
 /* Data types. */
 
 struct srv {
@@ -63,7 +67,7 @@ static srv_prio_list			prio_list;
 
 /* Forward. */
 
-static char *subst_cmd(struct srv *, const char *);
+static char *subst_cmd(const struct srv *, const char *);
 static char *target_name(const unsigned char *);
 static int do_cmd(struct srv *, int, char **);
 static struct srv *next_tuple(void);
@@ -128,10 +132,11 @@ next_tuple(void) {
 static void
 free_tuples(void) {
 	struct srv_prio *pe, *pe_next;
-	struct srv *se, *se_next;
 
 	pe = ISC_LIST_HEAD(prio_list);
 	while (pe != NULL) {
+		struct srv *se, *se_next;
+
 		pe_next = ISC_LIST_NEXT(pe, link);
 		ISC_LIST_UNLINK(prio_list, pe, link);
 
@@ -202,8 +207,8 @@ insert_tuple(char *tname, uint16_t prio, uint16_t weight, uint16_t port) {
 #ifdef DEBUG
 static void
 print_tuples(void) {
-	struct srv_prio *pe;
-	struct srv *se;
+	const struct srv_prio *pe;
+	const struct srv *se;
 
 	for (pe = ISC_LIST_HEAD(prio_list);
 	     pe != NULL;
@@ -253,7 +258,6 @@ parse_answer_section(ns_msg *msg) {
 				NS_GET16(prio, rdata);
 				NS_GET16(weight, rdata);
 				NS_GET16(port, rdata);
-				len -= 3U * NS_INT16SZ;
 				tname = target_name(rdata);
 				insert_tuple(tname, prio, weight, port);
 			}
@@ -262,7 +266,7 @@ parse_answer_section(ns_msg *msg) {
 }
 
 static char *
-subst_cmd(struct srv *se, const char *cmd) {
+subst_cmd(const struct srv *se, const char *cmd) {
 	char *q, *str;
 	const char *p = cmd;
 	int ch;
@@ -308,37 +312,55 @@ subst_cmd(struct srv *se, const char *cmd) {
 
 static int
 do_cmd(struct srv *se, int argc, char **argv) {
-	char *cmd, *scmd, *p;
-	int i, rc;
-	size_t bufsz = 2;
+	char **new_argv;
+	int i, rc = 1;
+	pid_t pid;
+	int status;
 
-	for (i = 2; i < argc; i++) {
-		bufsz += 1;
-		bufsz += strlen(argv[i]);
-	}
+	/* Build a new argv with %h/%p substituted in each element.
+	 * Using execvp (not system) avoids shell injection via hostile
+	 * hostnames returned in DNS SRV records. */
+	new_argv = malloc((size_t)(argc - 1) * sizeof(char *));
+	assert(new_argv != NULL);
 
-	p = cmd = malloc(bufsz);
-	assert(cmd != NULL);
-
-	for (i = 2; i < argc; i++) {
-		strcpy(p, argv[i]);
-		p += strlen(argv[i]);
-		if (i != argc - 1) {
-			*p++ = ' ';
-		}
-	}
-
-	scmd = subst_cmd(se, cmd);
-	free(cmd);
+	for (i = 2; i < argc; i++)
+		new_argv[i - 2] = subst_cmd(se, argv[i]);
+	new_argv[argc - 2] = NULL;
 
 #ifdef DEBUG
-	fprintf(stderr, "scmd='%s'\n", scmd);
+	fprintf(stderr, "cmd='%s'\n", new_argv[0]);
+	for (i = 1; new_argv[i] != NULL; i++)
+		fprintf(stderr, "  arg[%d]='%s'\n", i, new_argv[i]);
 #endif
 
-	rc = system(scmd);
-	rc = WEXITSTATUS(rc);
+	pid = fork();
+	if (pid < 0) {
+		perror("fork");
+		rc = 1;
+		goto cleanup;
+	}
 
-	free(scmd);
+	if (pid == 0) {
+		/* Child */
+		execvp(new_argv[0], new_argv);
+		perror("execvp");
+		_exit(127);
+	}
+
+	/* Parent: wait for child */
+	if (waitpid(pid, &status, 0) < 0) {
+		perror("waitpid");
+		rc = 1;
+	} else if (WIFEXITED(status)) {
+		rc = WEXITSTATUS(status);
+	} else {
+		rc = 1;
+	}
+
+cleanup:
+	for (i = 0; i < argc - 2; i++)
+		free(new_argv[i]);
+	free(new_argv);
 	free(se->tname);
 	free(se);
 
@@ -366,6 +388,11 @@ main(int argc, char **argv) {
 	struct srv *se;
 	struct timeval tv;
 	unsigned int seed = 0;
+
+	if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+		printf("wrapsrv %s\n", WRAPSRV_VERSION);
+		return (EXIT_SUCCESS);
+	}
 
 	if (argc < 3)
 		usage();
