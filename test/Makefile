@@ -1,7 +1,7 @@
-CC = gcc
-CFLAGS = -g -Wall -Wextra
-INCLUDE = -I..
-LDFLAGS = -lcmocka -lresolv
+CC ?= cc
+CFLAGS ?= -g -Wall -Wextra
+INCLUDE ?= -I..
+LDFLAGS ?= -lcmocka -lresolv
 
 TEST_BIN = test_wrapsrv
 SHIM = fake_res_query.so

@@ -46,7 +46,8 @@ asan:
 
 dist:
 	mkdir -p $(TARNAME)
-	cp $(SRC) list.h Makefile README.md LICENSE COPYRIGHT wrapsrv.1 VERSION $(TARNAME)/
+	cp $(SRC) list.h Makefile README.md LICENSE COPYRIGHT wrapsrv.1 $(TARNAME)/
+	printf '%s\n' "$(VERSION)" > $(TARNAME)/VERSION
 	tar czf $(TARNAME).tar.gz $(TARNAME)
 	rm -rf $(TARNAME)
 

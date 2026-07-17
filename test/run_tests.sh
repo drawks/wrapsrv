@@ -1,10 +1,11 @@
 #!/bin/bash
 # run_tests.sh — integration and unit test runner for wrapsrv.
 #
-# This script must be executed from the test/ directory (cd test && ./run_tests.sh)
-# so that relative paths to the built binaries resolve correctly.
+# Run from anywhere: this script changes to its own directory so relative paths
+# to the built binaries resolve correctly.
 
 set -euo pipefail
+cd "$(dirname "$0")"
 
 PASS=0
 FAIL=0
