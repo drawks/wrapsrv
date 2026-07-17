@@ -73,8 +73,8 @@ res_query(const char *dname, int class, int type, unsigned char *answer,
 
 	/* Count comma-separated records */
 	nrecs = 1;
-	for (const char *c = env; *c != '\0'; c++)
-		if (*c == ',')
+	for (const char *ch = env; *ch != '\0'; ch++)
+		if (*ch == ',')
 			nrecs++;
 
 	/* ---- DNS Header (12 bytes) ---- */
