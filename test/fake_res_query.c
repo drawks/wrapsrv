@@ -117,8 +117,11 @@ res_query(const char *dname, int class, int type, unsigned char *answer,
 		int rdpos = 0, n;
 
 		memset(host, 0, sizeof(host));
-		sscanf(token, "%255[^:]:%d:%d:%d", host, &port, &prio,
-		       &weight);
+		if (sscanf(token, "%255[^:]:%d:%d:%d", host, &port, &prio,
+			   &weight) < 1) {
+			/* Malformed record entry; skip it. */
+			continue;
+		}
 
 		/* NAME: pointer to QNAME in question section */
 		buf[pos++] = 0xC0;

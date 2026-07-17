@@ -30,13 +30,14 @@ reset_list(void)
 	ISC_LIST_INIT(prio_list);
 }
 
-/* Convenience: build a minimal srv struct on the stack (no heap tname). */
+/* Convenience: build a minimal srv struct on the stack with a heap-owned
+ * tname.  Caller must call free(se->tname) after use. */
 static void
 init_srv(struct srv *se, const char *tname, uint16_t port, uint16_t weight)
 {
 	memset(se, 0, sizeof(*se));
 	ISC_LINK_INIT(se, link);
-	se->tname = (char *)(uintptr_t)tname; /* non-owning; don't free */
+	se->tname = strdup(tname);
 	se->port = port;
 	se->weight = weight;
 }
@@ -253,6 +254,7 @@ test_subst_host(void **state)
 	result = subst_cmd(&se, "%h");
 	assert_string_equal(result, "myhost.example.com");
 	free(result);
+	free(se.tname);
 }
 
 static void
@@ -267,6 +269,7 @@ test_subst_port(void **state)
 	result = subst_cmd(&se, "%p");
 	assert_string_equal(result, "8080");
 	free(result);
+	free(se.tname);
 }
 
 static void
@@ -281,6 +284,7 @@ test_subst_host_and_port(void **state)
 	result = subst_cmd(&se, "connect %h:%p");
 	assert_string_equal(result, "connect srv.example.com:443");
 	free(result);
+	free(se.tname);
 }
 
 static void
@@ -296,6 +300,7 @@ test_subst_multiple_occurrences(void **state)
 	assert_string_equal(result,
 			    "h.example.com h.example.com 9090 9090");
 	free(result);
+	free(se.tname);
 }
 
 static void
@@ -310,6 +315,7 @@ test_subst_no_markers(void **state)
 	result = subst_cmd(&se, "echo hello");
 	assert_string_equal(result, "echo hello");
 	free(result);
+	free(se.tname);
 }
 
 static void
@@ -325,6 +331,7 @@ test_subst_hostname_with_dots_hyphens(void **state)
 	assert_string_equal(result,
 			    "ssh user@my-host-01.sub.example.com -p 22");
 	free(result);
+	free(se.tname);
 }
 
 static void
@@ -339,6 +346,7 @@ test_subst_adjacent_markers(void **state)
 	result = subst_cmd(&se, "%h:%p");
 	assert_string_equal(result, "h.example.com:8080");
 	free(result);
+	free(se.tname);
 }
 
 static void
@@ -353,6 +361,7 @@ test_subst_max_port(void **state)
 	result = subst_cmd(&se, "%p");
 	assert_string_equal(result, "65535");
 	free(result);
+	free(se.tname);
 }
 
 /* ---- free_tuples -------------------------------------------------------- */
