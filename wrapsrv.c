@@ -16,20 +16,20 @@
 
 /* Import. */
 
-#include <sys/types.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <arpa/nameser.h>
-#include <resolv.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <resolv.h>
+#include <sys/types.h>
 
-#include <sys/time.h>
-#include <sys/wait.h>
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -46,24 +46,24 @@
 /* Data types. */
 
 struct srv {
-	ISC_LINK(struct srv)		link;
-	char				*tname;
-	uint16_t			weight;
-	uint16_t			port;
+	ISC_LINK(struct srv) link;
+	char *tname;
+	uint16_t weight;
+	uint16_t port;
 };
 
 struct srv_prio {
-	ISC_LINK(struct srv_prio)	link;
-	ISC_LIST(struct srv)		srv_list;
-	uint16_t			prio;
+	ISC_LINK(struct srv_prio) link;
+	ISC_LIST(struct srv) srv_list;
+	uint16_t prio;
 };
 
-typedef ISC_LIST(struct srv)		srv_list;
-typedef ISC_LIST(struct srv_prio)	srv_prio_list;
+typedef ISC_LIST(struct srv) srv_list;
+typedef ISC_LIST(struct srv_prio) srv_prio_list;
 
 /* Globals. */
 
-static srv_prio_list			prio_list;
+static srv_prio_list prio_list;
 
 /* Forward. */
 
@@ -82,8 +82,8 @@ static void print_tuples(void);
 
 /* Functions. */
 
-static struct srv *
-next_tuple(void) {
+static struct srv *next_tuple(void)
+{
 	struct srv_prio *pe;
 	struct srv *se;
 	uint16_t rnd;
@@ -97,19 +97,15 @@ next_tuple(void) {
 		csum = 0;
 		wsum = 0;
 
-		for (se = ISC_LIST_HEAD(pe->srv_list);
-		     se != NULL;
-		     se = ISC_LIST_NEXT(se, link))
-		{
+		for (se = ISC_LIST_HEAD(pe->srv_list); se != NULL;
+		     se = ISC_LIST_NEXT(se, link)) {
 			wsum += se->weight;
 		}
 
 		rnd = random() % (wsum + 1);
 
-		for (se = ISC_LIST_HEAD(pe->srv_list);
-		     se != NULL;
-		     se = ISC_LIST_NEXT(se, link))
-		{
+		for (se = ISC_LIST_HEAD(pe->srv_list); se != NULL;
+		     se = ISC_LIST_NEXT(se, link)) {
 			csum += se->weight;
 
 			if (csum >= rnd) {
@@ -121,7 +117,8 @@ next_tuple(void) {
 		if (se != NULL) {
 #ifdef DEBUG
 			fprintf(stderr,
-				"rnd=%hu -> prio=%hu weight=%hu port=%hu tname=%s\n",
+				"rnd=%hu -> prio=%hu weight=%hu port=%hu "
+				"tname=%s\n",
 				rnd, pe->prio, se->weight, se->port, se->tname);
 #endif
 			return (se);
@@ -136,8 +133,8 @@ next_tuple(void) {
 	return (NULL);
 }
 
-static void
-free_tuples(void) {
+static void free_tuples(void)
+{
 	struct srv_prio *pe, *pe_next;
 
 	pe = ISC_LIST_HEAD(prio_list);
@@ -161,19 +158,18 @@ free_tuples(void) {
 	}
 }
 
-static void
-insert_tuple(char *tname, uint16_t prio, uint16_t weight, uint16_t port) {
+static void insert_tuple(char *tname, uint16_t prio, uint16_t weight,
+			 uint16_t port)
+{
 	struct srv_prio *pe;
 	struct srv *se;
 
-	for (pe = ISC_LIST_HEAD(prio_list);
-	     pe != NULL;
-	     pe = ISC_LIST_NEXT(pe, link))
-	{
+	for (pe = ISC_LIST_HEAD(prio_list); pe != NULL;
+	     pe = ISC_LIST_NEXT(pe, link)) {
 		if (pe->prio == prio)
 			break;
 	}
-	
+
 	if (pe == NULL) {
 		struct srv_prio *piter;
 
@@ -184,14 +180,13 @@ insert_tuple(char *tname, uint16_t prio, uint16_t weight, uint16_t port) {
 		ISC_LIST_INIT(pe->srv_list);
 		pe->prio = prio;
 
-		for (piter = ISC_LIST_HEAD(prio_list);
-		     piter != NULL;
-		     piter = ISC_LIST_NEXT(piter, link))
-		{
+		for (piter = ISC_LIST_HEAD(prio_list); piter != NULL;
+		     piter = ISC_LIST_NEXT(piter, link)) {
 			assert(piter->prio != prio);
 
 			if (piter->prio > prio) {
-				ISC_LIST_INSERTBEFORE(prio_list, piter, pe, link);
+				ISC_LIST_INSERTBEFORE(prio_list, piter, pe,
+						      link);
 				break;
 			}
 		}
@@ -212,20 +207,16 @@ insert_tuple(char *tname, uint16_t prio, uint16_t weight, uint16_t port) {
 }
 
 #ifdef DEBUG
-static void
-print_tuples(void) {
+static void print_tuples(void)
+{
 	const struct srv_prio *pe;
 	const struct srv *se;
 
-	for (pe = ISC_LIST_HEAD(prio_list);
-	     pe != NULL;
-	     pe = ISC_LIST_NEXT(pe, link))
-	{
+	for (pe = ISC_LIST_HEAD(prio_list); pe != NULL;
+	     pe = ISC_LIST_NEXT(pe, link)) {
 		fprintf(stderr, "prio=%hu\n", pe->prio);
-		for (se = ISC_LIST_HEAD(pe->srv_list);
-		     se != NULL;
-		     se = ISC_LIST_NEXT(se, link))
-		{
+		for (se = ISC_LIST_HEAD(pe->srv_list); se != NULL;
+		     se = ISC_LIST_NEXT(se, link)) {
 			fprintf(stderr, "\tweight=%hu port=%hu tname=%s\n",
 				se->weight, se->port, se->tname);
 		}
@@ -233,8 +224,8 @@ print_tuples(void) {
 }
 #endif
 
-static char *
-target_name(const unsigned char *target) {
+static char *target_name(const unsigned char *target)
+{
 	char buf[NS_MAXDNAME];
 
 	if (ns_name_ntop(target, buf, sizeof buf) == -1) {
@@ -244,8 +235,8 @@ target_name(const unsigned char *target) {
 	return (strdup(buf));
 }
 
-static void
-parse_answer_section(ns_msg *msg) {
+static void parse_answer_section(ns_msg *msg)
+{
 	int rrnum, rrmax;
 	ns_rr rr;
 	uint16_t prio, weight, port, len;
@@ -272,8 +263,8 @@ parse_answer_section(ns_msg *msg) {
 	}
 }
 
-static char *
-subst_cmd(const struct srv *se, const char *cmd) {
+static char *subst_cmd(const struct srv *se, const char *cmd)
+{
 	char *q, *str;
 	const char *p = cmd;
 	int ch;
@@ -293,7 +284,7 @@ subst_cmd(const struct srv *se, const char *cmd) {
 
 	bufsz = strlen(cmd) + 1;
 	bufsz -= 2 * (n_host + n_port); /* '%h' and '%p' */
-	bufsz += 5 * n_port; /* '%h' -> uint16_t */
+	bufsz += 5 * n_port;            /* '%h' -> uint16_t */
 	bufsz += (strlen(se->tname) + 1) * n_host;
 
 	str = calloc(1, bufsz);
@@ -317,8 +308,8 @@ subst_cmd(const struct srv *se, const char *cmd) {
 	return (str);
 }
 
-static int
-do_cmd(struct srv *se, int argc, char **argv) {
+static int do_cmd(struct srv *se, int argc, char **argv)
+{
 	char **new_argv;
 	int i, rc = 1;
 	pid_t pid;
@@ -377,16 +368,16 @@ cleanup:
 	return (rc);
 }
 
-static void
-usage(void) {
+static void usage(void)
+{
 	fprintf(stderr, "Usage: wrapsrv <SRVNAME> <COMMAND> [OPTION]...\n");
 	fprintf(stderr, "%%h and %%p sequences will be converted to "
-		"hostname and port.\n");
+			"hostname and port.\n");
 	exit(EXIT_FAILURE);
 }
 
-int
-main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
 	char *qname;
 	ns_msg msg;
 	int len, rc = 0;
@@ -408,8 +399,8 @@ main(int argc, char **argv) {
 
 	gettimeofday(&tv, NULL);
 
-	seed ^= (unsigned int) tv.tv_usec;
-	seed ^= (unsigned int) getpid();
+	seed ^= (unsigned int)tv.tv_usec;
+	seed ^= (unsigned int)getpid();
 
 	srandom(seed);
 
