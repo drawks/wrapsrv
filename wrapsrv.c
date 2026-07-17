@@ -16,20 +16,20 @@
 
 /* Import. */
 
-#include <sys/types.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <arpa/nameser.h>
-#include <resolv.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <resolv.h>
+#include <sys/types.h>
 
-#include <sys/time.h>
-#include <sys/wait.h>
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -39,31 +39,35 @@
 #define NS_MAXMSG 65535
 #endif
 
+#ifndef WRAPSRV_VERSION
+#define WRAPSRV_VERSION "unknown"
+#endif
+
 /* Data types. */
 
 struct srv {
-	ISC_LINK(struct srv)		link;
-	char				*tname;
-	uint16_t			weight;
-	uint16_t			port;
+	ISC_LINK(struct srv) link;
+	char *tname;
+	uint16_t weight;
+	uint16_t port;
 };
 
 struct srv_prio {
-	ISC_LINK(struct srv_prio)	link;
-	ISC_LIST(struct srv)		srv_list;
-	uint16_t			prio;
+	ISC_LINK(struct srv_prio) link;
+	ISC_LIST(struct srv) srv_list;
+	uint16_t prio;
 };
 
-typedef ISC_LIST(struct srv)		srv_list;
-typedef ISC_LIST(struct srv_prio)	srv_prio_list;
+typedef ISC_LIST(struct srv) srv_list;
+typedef ISC_LIST(struct srv_prio) srv_prio_list;
 
 /* Globals. */
 
-static srv_prio_list			prio_list;
+static srv_prio_list prio_list;
 
 /* Forward. */
 
-static char *subst_cmd(struct srv *, const char *);
+static char *subst_cmd(const struct srv *, const char *);
 static char *target_name(const unsigned char *);
 static int do_cmd(struct srv *, int, char **);
 static struct srv *next_tuple(void);
@@ -78,60 +82,65 @@ static void print_tuples(void);
 
 /* Functions. */
 
-static struct srv *
-next_tuple(void) {
+static struct srv *next_tuple(void)
+{
 	struct srv_prio *pe;
 	struct srv *se;
 	uint16_t rnd;
-	unsigned csum = 0;
-	unsigned wsum = 0;
-
-	pe = ISC_LIST_HEAD(prio_list);
-	if (pe == NULL)
-		return (NULL);
-
-	for (se = ISC_LIST_HEAD(pe->srv_list);
-	     se != NULL;
-	     se = ISC_LIST_NEXT(se, link))
-	{
-		wsum += se->weight;
-	}
-
-	rnd = random() % (wsum + 1);
-
-	for (se = ISC_LIST_HEAD(pe->srv_list);
-	     se != NULL;
-	     se = ISC_LIST_NEXT(se, link))
-	{
-		csum += se->weight;
-
-		if (csum >= rnd) {
-			ISC_LIST_UNLINK(pe->srv_list, se, link);
-			break;
-		}
-	}
-
-	if (se == NULL) {
-		ISC_LIST_UNLINK(prio_list, pe, link);
-		free(pe);
-		return (next_tuple());
-	}
-
-#ifdef DEBUG
-	fprintf(stderr, "rnd=%hu -> prio=%hu weight=%hu port=%hu tname=%s\n",
-		rnd, pe->prio, se->weight, se->port, se->tname);
-#endif
-
-	return (se);
-}
-
-static void
-free_tuples(void) {
-	struct srv_prio *pe, *pe_next;
-	struct srv *se, *se_next;
+	unsigned csum;
+	unsigned wsum;
 
 	pe = ISC_LIST_HEAD(prio_list);
 	while (pe != NULL) {
+		struct srv_prio *next_pe;
+
+		csum = 0;
+		wsum = 0;
+
+		for (se = ISC_LIST_HEAD(pe->srv_list); se != NULL;
+		     se = ISC_LIST_NEXT(se, link)) {
+			wsum += se->weight;
+		}
+
+		rnd = random() % (wsum + 1);
+
+		for (se = ISC_LIST_HEAD(pe->srv_list); se != NULL;
+		     se = ISC_LIST_NEXT(se, link)) {
+			csum += se->weight;
+
+			if (csum >= rnd) {
+				ISC_LIST_UNLINK(pe->srv_list, se, link);
+				break;
+			}
+		}
+
+		if (se != NULL) {
+#ifdef DEBUG
+			fprintf(stderr,
+				"rnd=%hu -> prio=%hu weight=%hu port=%hu "
+				"tname=%s\n",
+				rnd, pe->prio, se->weight, se->port, se->tname);
+#endif
+			return (se);
+		}
+
+		next_pe = ISC_LIST_NEXT(pe, link);
+		ISC_LIST_UNLINK(prio_list, pe, link);
+		free(pe);
+		pe = next_pe;
+	}
+
+	return (NULL);
+}
+
+static void free_tuples(void)
+{
+	struct srv_prio *pe, *pe_next;
+
+	pe = ISC_LIST_HEAD(prio_list);
+	while (pe != NULL) {
+		struct srv *se, *se_next;
+
 		pe_next = ISC_LIST_NEXT(pe, link);
 		ISC_LIST_UNLINK(prio_list, pe, link);
 
@@ -149,19 +158,18 @@ free_tuples(void) {
 	}
 }
 
-static void
-insert_tuple(char *tname, uint16_t prio, uint16_t weight, uint16_t port) {
+static void insert_tuple(char *tname, uint16_t prio, uint16_t weight,
+			 uint16_t port)
+{
 	struct srv_prio *pe;
 	struct srv *se;
 
-	for (pe = ISC_LIST_HEAD(prio_list);
-	     pe != NULL;
-	     pe = ISC_LIST_NEXT(pe, link))
-	{
+	for (pe = ISC_LIST_HEAD(prio_list); pe != NULL;
+	     pe = ISC_LIST_NEXT(pe, link)) {
 		if (pe->prio == prio)
 			break;
 	}
-	
+
 	if (pe == NULL) {
 		struct srv_prio *piter;
 
@@ -172,14 +180,13 @@ insert_tuple(char *tname, uint16_t prio, uint16_t weight, uint16_t port) {
 		ISC_LIST_INIT(pe->srv_list);
 		pe->prio = prio;
 
-		for (piter = ISC_LIST_HEAD(prio_list);
-		     piter != NULL;
-		     piter = ISC_LIST_NEXT(piter, link))
-		{
+		for (piter = ISC_LIST_HEAD(prio_list); piter != NULL;
+		     piter = ISC_LIST_NEXT(piter, link)) {
 			assert(piter->prio != prio);
 
 			if (piter->prio > prio) {
-				ISC_LIST_INSERTBEFORE(prio_list, piter, pe, link);
+				ISC_LIST_INSERTBEFORE(prio_list, piter, pe,
+						      link);
 				break;
 			}
 		}
@@ -200,20 +207,16 @@ insert_tuple(char *tname, uint16_t prio, uint16_t weight, uint16_t port) {
 }
 
 #ifdef DEBUG
-static void
-print_tuples(void) {
-	struct srv_prio *pe;
-	struct srv *se;
+static void print_tuples(void)
+{
+	const struct srv_prio *pe;
+	const struct srv *se;
 
-	for (pe = ISC_LIST_HEAD(prio_list);
-	     pe != NULL;
-	     pe = ISC_LIST_NEXT(pe, link))
-	{
+	for (pe = ISC_LIST_HEAD(prio_list); pe != NULL;
+	     pe = ISC_LIST_NEXT(pe, link)) {
 		fprintf(stderr, "prio=%hu\n", pe->prio);
-		for (se = ISC_LIST_HEAD(pe->srv_list);
-		     se != NULL;
-		     se = ISC_LIST_NEXT(se, link))
-		{
+		for (se = ISC_LIST_HEAD(pe->srv_list); se != NULL;
+		     se = ISC_LIST_NEXT(se, link)) {
 			fprintf(stderr, "\tweight=%hu port=%hu tname=%s\n",
 				se->weight, se->port, se->tname);
 		}
@@ -221,8 +224,8 @@ print_tuples(void) {
 }
 #endif
 
-static char *
-target_name(const unsigned char *target) {
+static char *target_name(const unsigned char *target)
+{
 	char buf[NS_MAXDNAME];
 
 	if (ns_name_ntop(target, buf, sizeof buf) == -1) {
@@ -232,8 +235,8 @@ target_name(const unsigned char *target) {
 	return (strdup(buf));
 }
 
-static void
-parse_answer_section(ns_msg *msg) {
+static void parse_answer_section(ns_msg *msg)
+{
 	int rrnum, rrmax;
 	ns_rr rr;
 	uint16_t prio, weight, port, len;
@@ -253,7 +256,6 @@ parse_answer_section(ns_msg *msg) {
 				NS_GET16(prio, rdata);
 				NS_GET16(weight, rdata);
 				NS_GET16(port, rdata);
-				len -= 3U * NS_INT16SZ;
 				tname = target_name(rdata);
 				insert_tuple(tname, prio, weight, port);
 			}
@@ -261,8 +263,8 @@ parse_answer_section(ns_msg *msg) {
 	}
 }
 
-static char *
-subst_cmd(struct srv *se, const char *cmd) {
+static char *subst_cmd(const struct srv *se, const char *cmd)
+{
 	char *q, *str;
 	const char *p = cmd;
 	int ch;
@@ -282,7 +284,7 @@ subst_cmd(struct srv *se, const char *cmd) {
 
 	bufsz = strlen(cmd) + 1;
 	bufsz -= 2 * (n_host + n_port); /* '%h' and '%p' */
-	bufsz += 5 * n_port; /* '%h' -> uint16_t */
+	bufsz += 5 * n_port;            /* '%h' -> uint16_t */
 	bufsz += (strlen(se->tname) + 1) * n_host;
 
 	str = calloc(1, bufsz);
@@ -306,39 +308,57 @@ subst_cmd(struct srv *se, const char *cmd) {
 	return (str);
 }
 
-static int
-do_cmd(struct srv *se, int argc, char **argv) {
-	char *cmd, *scmd, *p;
-	int i, rc;
-	size_t bufsz = 2;
+static int do_cmd(struct srv *se, int argc, char **argv)
+{
+	char **new_argv;
+	int i, rc = 1;
+	pid_t pid;
+	int status;
 
-	for (i = 2; i < argc; i++) {
-		bufsz += 1;
-		bufsz += strlen(argv[i]);
-	}
+	/* Build a new argv with %h/%p substituted in each element.
+	 * Using execvp (not system) avoids shell injection via hostile
+	 * hostnames returned in DNS SRV records. */
+	new_argv = malloc((size_t)(argc - 1) * sizeof(char *));
+	assert(new_argv != NULL);
 
-	p = cmd = malloc(bufsz);
-	assert(cmd != NULL);
-
-	for (i = 2; i < argc; i++) {
-		strcpy(p, argv[i]);
-		p += strlen(argv[i]);
-		if (i != argc - 1) {
-			*p++ = ' ';
-		}
-	}
-
-	scmd = subst_cmd(se, cmd);
-	free(cmd);
+	for (i = 2; i < argc; i++)
+		new_argv[i - 2] = subst_cmd(se, argv[i]);
+	new_argv[argc - 2] = NULL;
 
 #ifdef DEBUG
-	fprintf(stderr, "scmd='%s'\n", scmd);
+	fprintf(stderr, "cmd='%s'\n", new_argv[0]);
+	for (i = 1; new_argv[i] != NULL; i++)
+		fprintf(stderr, "  arg[%d]='%s'\n", i, new_argv[i]);
 #endif
 
-	rc = system(scmd);
-	rc = WEXITSTATUS(rc);
+	pid = fork();
+	if (pid < 0) {
+		perror("fork");
+		rc = 1;
+		goto cleanup;
+	}
 
-	free(scmd);
+	if (pid == 0) {
+		/* Child */
+		execvp(new_argv[0], new_argv);
+		perror("execvp");
+		_exit(127);
+	}
+
+	/* Parent: wait for child */
+	if (waitpid(pid, &status, 0) < 0) {
+		perror("waitpid");
+		rc = 1;
+	} else if (WIFEXITED(status)) {
+		rc = WEXITSTATUS(status);
+	} else {
+		rc = 1;
+	}
+
+cleanup:
+	for (i = 0; i < argc - 2; i++)
+		free(new_argv[i]);
+	free(new_argv);
 	free(se->tname);
 	free(se);
 
@@ -348,16 +368,16 @@ do_cmd(struct srv *se, int argc, char **argv) {
 	return (rc);
 }
 
-static void
-usage(void) {
+static void usage(void)
+{
 	fprintf(stderr, "Usage: wrapsrv <SRVNAME> <COMMAND> [OPTION]...\n");
 	fprintf(stderr, "%%h and %%p sequences will be converted to "
-		"hostname and port.\n");
+			"hostname and port.\n");
 	exit(EXIT_FAILURE);
 }
 
-int
-main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
 	char *qname;
 	ns_msg msg;
 	int len, rc = 0;
@@ -367,6 +387,11 @@ main(int argc, char **argv) {
 	struct timeval tv;
 	unsigned int seed = 0;
 
+	if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+		printf("wrapsrv %s\n", WRAPSRV_VERSION);
+		return (EXIT_SUCCESS);
+	}
+
 	if (argc < 3)
 		usage();
 
@@ -374,8 +399,8 @@ main(int argc, char **argv) {
 
 	gettimeofday(&tv, NULL);
 
-	seed ^= (unsigned int) tv.tv_usec;
-	seed ^= (unsigned int) getpid();
+	seed ^= (unsigned int)tv.tv_usec;
+	seed ^= (unsigned int)getpid();
 
 	srandom(seed);
 
